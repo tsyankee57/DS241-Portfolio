@@ -1,0 +1,84 @@
+---
+title: "NYCFlights"
+author: "Tyler Yankee"
+date: "2022-09-09"
+output: html_notebook
+---
+
+Class play with NYC flights data.
+
+## Load packages
+
+```{r}
+library(tidyverse)
+library(nycflights13)
+library(here)
+library(janitor)
+```
+
+## Load flight data
+```{r}
+# df1 is the original data set from nycflights13, flights
+df1 = flights
+
+# df2 represents all flights from Miami in September
+df2 <- df1 %>% filter(
+  origin == "MIA",
+  month == 9
+)
+
+# df3 is all flights to Miami in September
+df3 <- df1 %>% filter(
+  dest == "MIA",
+  month == 9
+)
+
+# df4 is all flights to Miami in January
+df4 = df1 %>% filter(
+  dest == "MIA",
+  month == 1
+)
+
+# df5 is all flights to Miami in July
+df5 = df1 %>% filter(
+  dest == "MIA",
+  month == 7
+)
+
+```
+
+
+## Plot flight data to Miami over the year
+```{r}
+df6 = df1 %>% filter(
+  dest == "MIA"
+)
+
+df6 %>% ggplot(aes(month)) +
+  geom_bar()
+
+```
+Analyzing the graph above, we note:
+
+* The greatest amount of flights was in December, perhaps because people taking vacation to a warmer location during the winter.
+* The least amount of flights was in February, perhaps because it is the shortest month.
+* In general, the alternating pattern of the distribution could indicate that the number of flights is correlated with the number of days in a month.
+
+
+## Plot flight data to various Southern and Western airports
+
+```{r}
+airports <- c("LAX", "SAN", "SFO", "ATL", "ORD", "MIA")
+df7 = df1 %>% filter(
+  dest %in% airports
+)
+df7 %>% ggplot(aes(x = month, fill = dest)) + geom_bar() + facet_wrap(~dest)
+
+```
+
+Observation(s) from the above graph:
+
+* San Diego (SAN) gets significantly less flight traffic than the other airports.
+* Miami (MIA) has much less variance in number of flights throughout the year than the other airports. Atlanta (ATL) also shows this to some extent, perhaps because it is a major hub.
+* Los Angeles (LAX), Chicago (ORD), and San Francisco (SFD) have similar patterns of distribution, with less flights in the winter and more in the summer. November and December are an exception to this, where ORD is much lower.
+* February is low, perhaps because there are fewer days and because it is during the middle of winter.
