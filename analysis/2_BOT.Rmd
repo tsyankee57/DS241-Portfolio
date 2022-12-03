@@ -1,0 +1,132 @@
+---
+title: "Bureau of Transportation"
+author: "Tyler Yankee"
+date: "2022-09-13"
+output: html_notebook
+---
+
+
+## Load packages
+
+```{r}
+library(tidyverse)
+library(here)
+library(janitor)
+```
+
+## Load the BOT data
+```{r}
+df2019 = read_csv(here("data_raw", "BOT.zip")) %>% clean_names()
+```
+
+## Subsetting to data of interest
+Let’s focus on flights from La Guardia (airport “LGA”) and eliminate cargo flights by requiring at leat 1 passenger.
+
+```{r}
+df9 = df2019 %>% filter(passengers > 0, origin == "LGA")
+df9 %>% ggplot(aes(month)) + geom_bar()
+```
+
+By default, geom_bar is counting the number of rows, where we asked it to visualize the count by month.
+
+Counting rows is not going to give us a count of flights because in this dataset, the number of departures is different per row.
+
+The visualization we want is:
+```{r}
+df9 %>% ggplot(aes(month)) + geom_bar(aes(weight = departures_performed))
+```
+
+## A new visualization
+Can you make a bar chart where the bar height is based on the number of passengers riding each month?
+
+```{r}
+df9 %>% ggplot(aes(x = month)) + geom_bar(aes(weight = passengers))
+```
+
+## Just because you can
+Here is a pretty, but not so useful plot.
+```{r}
+df9 %>% ggplot(aes(month, fill = carrier_name)) + 
+  geom_bar(aes(weight = departures_performed))
+```
+
+## New perspective
+
+Let's filter our dataset based on people leaving *and* entering La Guardia.
+
+```{r}
+df10 = df2019 %>% filter(passengers > 0, origin == "LGA" | dest == "LGA")
+df10 %>% ggplot(aes(x = month)) + geom_bar(aes(weight = passengers))
+```
+
+## Add a new variable, percent_loading
+```{r}
+df11 = df10 %>% select(month, passengers, seats, carrier_name, origin, dest)
+df13 = df11 %>% mutate(percent_loading = passengers / seats * 100)
+df13 %>% ggplot(aes(x = month)) + geom_bar(aes(weight = percent_loading))
+```
+
+## Analyze percent_loading with 4 different airlines
+```{r}
+carriers <- c("American Airlines Inc.", "Delta Air Lines Inc.", "Frontier Airlines Inc.", "United Air Lines Inc.")
+df14 = df13 %>% filter(
+  carrier_name %in% carriers
+)
+df14 %>% ggplot(aes(x = percent_loading)) + geom_histogram(binwidth = 5) + facet_wrap(~carrier_name, scales = "free_y")
+```
+
+## Summarize data
+```{r}
+df15 = df2019 %>% filter(passengers > 0, origin == "LGA" | dest == "LGA") %>%
+  group_by(month) %>% summarise(total_pass = sum(passengers))
+
+# Side track - note the inheritance and the difference between the two data types here
+df15a = df2019 %>% filter(passengers > 0, origin == "LGA" | dest == "LGA") %>%
+  group_by(month)
+df15b = df2019 %>% filter(passengers > 0, origin == "LGA" | dest == "LGA")
+class(df15)
+class(df15a)
+class(df15b)
+class(df2019)
+
+# Anyway, let's continue summarizing
+# Get the total passengers for each month, the total number of flights each month, and the average number of passengers per flight
+# Also group by carrier
+df16 = df2019 %>% filter(passengers > 0, origin == "LGA" | dest == "LGA") %>%
+  group_by(month, carrier_name) %>%
+  summarise(total_pass = sum(passengers), num_flights = sum(departures_performed)) %>%
+  mutate(average_pass_per_flight = total_pass / num_flights)
+
+df16 %>% ggplot(aes(x = month, y = average_pass_per_flight, color = carrier_name)) + geom_line()
+df16 %>% ggplot(aes(x = month)) + geom_bar(aes(weight = average_pass_per_flight)) + 
+  facet_wrap(~carrier_name)
+```
+
+Some thoughts on the above graph:
+- there are 4 main clumps of data - could be due to different sizes of planes
+- generally the pattern over the course of the year is the same across each airline - Jan low, July/Aug high
+- incomplete data for some airlines
+- so many airlines on one graph that it's difficult to differentiate the colors
+
+Let's look at the number of seats instead of passengers - 
+```{r}
+df16a = df2019 %>% filter(passengers > 0, origin == "LGA" | dest == "LGA") %>%
+  group_by(month, carrier_name) %>%
+  summarise(total_seats = sum(seats), num_flights = sum(departures_performed)) %>%
+  mutate(average_seats_per_flight = total_seats / num_flights)
+df16a %>% ggplot(aes(x = month, y = average_seats_per_flight, color = carrier_name)) + geom_line()
+```
+
+This raises an interesting question: is spirit Air Lines reconfiguring their seats in the summer months, or are they using different planes?
+
+New problem: For the two major airports in New York City, let's examine the ratio between passengers and cargo that they each have.
+```{r}
+# These two dataframes represent flights only carrying cargo (mail or freight) to and from the two major NYC airports.
+df17 = df2019 %>% filter(freight > 0 | mail > 0, origin == "JFK" | dest == "JFK")
+df18 = df2019 %>% filter(freight > 0 | mail > 0, origin == "LGA" | dest == "LGA")
+
+df17 %>% ggplot(aes(x = freight)) + geom_histogram(binwidth = 1000) + 
+  ggtitle("freight for JFK") + ylim(0, 50)
+df18 %>% ggplot(aes(x = freight)) + geom_histogram(binwidth = 500) +
+  ggtitle("freight for LGA")
+```
