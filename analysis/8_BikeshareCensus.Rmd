@@ -1,0 +1,56 @@
+---
+title: "Bikeshare Geographic Analysis"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(here)
+library(janitor)
+library(lubridate)
+library(sf)
+library(tmap)
+library(tidycensus)
+
+bikeshare = read_csv(here("data_raw", "202209-capitalbikeshare-tripdata.zip")) %>%
+  clean_names() %>% select(ride_id, start_lat, start_lng, end_lat, end_lng) %>%
+  filter(!is.na(end_lat), !is.na(end_lng))
+
+census=get_acs(geography = "tract",
+                  variables=c("pop"="B01001_001"),
+                  state="DC",geometry=TRUE,year=2018)
+```
+
+Count number of rides starting and ending in each census tract:
+```{r}
+census_wide = census %>% select(-moe) %>% spread(variable, estimate) %>% 
+  select(GEOID, pop, geometry) %>% st_transform(4326)
+
+bikeshare_start_pts = bikeshare %>% select(start_lng, start_lat) %>% 
+  st_as_sf(coords=c("start_lng", "start_lat"), crs=st_crs(census_wide))
+bike_census = census_wide %>% mutate(start_count = 
+                                       lengths(st_intersects(., bikeshare_start_pts)))
+
+bikeshare_end_pts = bikeshare %>% select(end_lng, end_lat) %>% 
+  st_as_sf(coords=c("end_lng", "end_lat"), crs=st_crs(census_wide))
+bike_census = bike_census %>% mutate(end_count = 
+                                       lengths(st_intersects(., bikeshare_end_pts)))
+```
+
+
+Plot:
+```{r}
+tmap_mode("view")
+tm_shape(bike_census) + tm_polygons(c("pop", "start_count", "end_count"), alpha=.5)
+```
+
+Normalized for population:
+```{r}
+# Filter out the one region specified because their bikeshare rate was so high that
+# it skewed the visualization
+bike_census_pop = bike_census %>% mutate(start_rate = start_count / pop,
+                                         end_rate = end_count / pop) %>%
+  filter(GEOID != 11001006202)
+tm_shape(bike_census_pop) + tm_polygons(c("start_rate", "end_rate"), alpha=.5)
+```
+
