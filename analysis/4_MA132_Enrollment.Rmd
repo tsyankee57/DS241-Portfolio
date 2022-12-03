@@ -1,0 +1,149 @@
+---
+title: "MA 132 Enrollment Model"
+author: "Tyler Yankee"
+date: "2022-10-03"
+output: html_notebook
+---
+
+## Load data and packages
+```{r}
+library(tidyverse)
+library(here)
+library(janitor)
+
+df = read_csv(here("data_raw", "clarkson_math_enrollment.csv")) %>% clean_names() %>% 
+  filter(component == "LEC", course_id %in% c(8732, 8733), startsWith(term2, "Fall") | startsWith(term2, "Spring")) %>%
+  select(course_id, catalog, term, term2, title, tot_enrl, section) %>%
+  distinct()
+```
+
+## Examine MA 132 from past years
+```{r}
+# Filtering for sum > 0 gets rid of spring 22, we only care about past data
+df_ma132_s = df %>% filter(course_id == 8733, startsWith(term2, "Spring")) %>% 
+  group_by(term2) %>%
+  summarise(ma132_s = sum(tot_enrl)) %>%
+  filter(ma132_s > 0)
+```
+
+## Examine MA 131 in the fall from past years
+Some fraction of these students will be going into MA 132 in the following spring, so this is useful data - if nothing else then to visualize.
+```{r}
+df_ma131_f = df %>% filter(course_id == 8732, startsWith(term2, "Fall")) %>%
+  group_by(term2) %>%
+  summarise(ma131_enrl_f = sum(tot_enrl)) %>%
+  filter(ma131_enrl_f > 0)
+```
+
+## Get MA 132 data
+Separate by fall section 1 (repeat students), fall sections 2 and 3 (first-year students) - will have different pass rates - and spring.
+```{r}
+df_ma132_f1 = df %>% filter(course_id == 8733, startsWith(term2, "Fall"), section == 1) %>%
+  group_by(term2) %>%
+  summarise(ma132_enrl_f1 = sum(tot_enrl)) %>%
+  filter(ma132_enrl_f1 > 0)
+
+df_ma132_f23 = df %>% filter(course_id == 8733, startsWith(term2, "Fall"), section == 2 | section == 3) %>%
+  group_by(term2) %>%
+  summarise(ma132_enrl_f23 = sum(tot_enrl)) %>%
+  filter(ma132_enrl_f23 > 0)
+
+df_ma132_s = df %>% filter(course_id == 8733, startsWith(term2, "Spring")) %>%
+  group_by(term2) %>%
+  summarise(ma132_enrl_s = sum(tot_enrl)) %>%
+  filter(ma132_enrl_s > 0)
+```
+
+## Assemble data in a table for multiple regression
+Bind all previous data together and convert 'term2' to a year number, where the year represents the spring of that academic year. For example, the row for "2016" represents 2015 for Fall data and 2016 for Spring data.
+This approach eliminates the issue of discrepancies between year numbers (i.e., we don't have Spring 2014 data but do have Fall 2014, since these are from different academic years) and, in general, makes the pairing of fall and spring semesters according to academic year more logical.
+```{r}
+# Don't include MA 132 spring data because we need to manipulate the year first
+df2 = cbind(df_ma132_f1, df_ma132_f23, df_ma131_f)
+df2 <- df2[, !duplicated(colnames(df2), fromLast=TRUE)]
+
+# Note that this makes 'year' a string, if it needs to be an integer we can look at that later.
+# I'm only using select() to order the columns here, not actually losing any data
+df2 = df2 %>% mutate(year = strtoi(substr(term2, nchar(term2)-4, nchar(term2))) + 1) %>%
+  select(year, ma131_enrl_f, ma132_enrl_f1, ma132_enrl_f23)
+
+# Now add the spring data
+# Dodging processing the year because we know already that the data is from Spring 2015-2021
+# In order to make the rows line up we have to add a 'NA' row for Spring 2022
+df_ma132_s = df_ma132_s %>% add_row(term2 = "Spring 2022", ma132_enrl_s = NA)
+df2 = cbind(df2, df_ma132_s$ma132_enrl_s)
+
+# Make a separate column for ma132_f combined
+df2 = df2 %>% mutate(ma132_enrl_f = ma132_enrl_f1 + ma132_enrl_f23)
+```
+
+## Visualizations with df2
+```{r}
+df2 %>% ggplot(aes(x = year, y = df_ma132_s$ma132_enrl_s)) + geom_point() + 
+  ggtitle("Spring Enrollment in MA 132") + xlab("Year") + ylab("Number of Students") +
+  ylim(0, 600) + 
+  geom_smooth(method = lm, se = FALSE, fullrange = TRUE)
+
+df2 %>% ggplot(aes(x = ma131_enrl_f, y = df_ma132_s$ma132_enrl_s)) + geom_point() + 
+  ggtitle("MA131 fall vs MA132 spring") + 
+  xlab("Number of Students for ma131 fall") + ylab("Number of Students for ma132 spring") +
+  ylim(200, 600) + xlim(400,600) +
+  geom_smooth(method = lm, se = FALSE, fullrange = TRUE)
+```
+
+## Predict MA 132 Enrollment w/ Regression
+MA 132 Spring enrollment will be based on some combination of:
+
+* MA 131 enrollment in the previous fall
+* MA 132 Section 1 (advanced freshmen) in the previous fall
+* MA 132 Sections 2 and 3 (repeat students) in the previous fall
+
+Use multiple linear regression...
+```{r}
+lm2 = lm(df_ma132_s$ma132_enrl_s ~ ma131_enrl_f + ma132_enrl_f1 + ma132_enrl_f23, df2)
+summary(lm2)
+
+df3 <- data.frame(ma131_enrl_f = df2[8,"ma131_enrl_f"],
+                  ma132_enrl_f1 = df2[8,"ma132_enrl_f1"],
+                  ma132_enrl_f23 = df2[8,"ma132_enrl_f23"])
+ma132_enrl_s22 = predict(lm2, df3)
+sprintf("Prediction for MA 132 Spring 2022 Enrollment: %f", ma132_enrl_s22)
+```
+
+## Model with one predictor
+Only dependent on MA 131 fall enrollment
+```{r}
+lm1 = lm(df_ma132_s$ma132_enrl_s ~ ma131_enrl_f, df2)
+summary(lm1)
+
+df4 <- data.frame(ma131_enrl_f = df2[8,"ma131_enrl_f"])
+ma132_enrl_s22_1 = predict(lm1, df4)
+sprintf("Prediction for MA 132 Spring 2022 Enrollment: %f", ma132_enrl_s22_1)
+```
+
+
+## Two predictors
+Combine the MA 132 fall sections
+```{r}
+lm3 = lm(df_ma132_s$ma132_enrl_s ~ ma131_enrl_f + ma132_enrl_f, df2)
+summary(lm3)
+
+df5 <- data.frame(ma131_enrl_f = df2[8,"ma131_enrl_f"],
+                  ma132_enrl_f = df2[8,"ma132_enrl_f"])
+ma132_enrl_s22_2 = predict(lm3, df5)
+sprintf("Prediction for MA 132 Spring 2022 Enrollment: %f", ma132_enrl_s22_2)
+```
+
+## New Model
+After analysis of coefficients
+Intercept of 0 - if we have zero fall students, we predict 0 spring students
+```{r}
+lm4 = lm(df_ma132_s$ma132_enrl_s ~ ma131_enrl_f + ma132_enrl_f + 0, df2)
+summary(lm4)
+
+df6 <- data.frame(ma131_enrl_f = df2[8,"ma131_enrl_f"],
+                  ma132_enrl_f = df2[8,"ma132_enrl_f"])
+ma132_enrl_s22_3 = predict(lm4, df6)
+sprintf("Prediction for MA 132 Spring 2022 Enrollment: %f", ma132_enrl_s22_3)
+```
+
