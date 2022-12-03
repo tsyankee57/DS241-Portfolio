@@ -1,0 +1,224 @@
+---
+title: "Denny's/La Quinta Lab 5 - Spatial Analysis"
+output: html_notebook
+author: "Tyler Yankee"
+date: "2022-10-18"
+---
+
+## Load packages and data
+```{r}
+library(tidyverse)
+library(dsbox)
+library(here)
+library(janitor)
+```
+
+1. Filter the Denny’s dataframe for Alaska (AK) and save the result as dn_ak. How many Denny’s locations are there in Alaska?
+2. Filter the La Quinta dataframe for Alaska (AK) and save the result as lq_ak. How many La Quinta locations are there in Alaska?
+```{r}
+dn_ak = dennys %>% filter(state == "AK")
+nrow(dn_ak)
+
+lq_ak = laquinta %>% filter(state == "AK")
+nrow(lq_ak)
+```
+
+Next we’ll calculate the distance between all Denny’s and all La Quinta locations in Alaska. Let’s take this step by step:
+Step 1: There are 3 Denny’s and 2 La Quinta locations in Alaska.
+Step 2: Let’s focus on the first Denny’s location. We’ll need to calculate two distances for it: (1) distance between Denny’s 1 and La Quinta 1 and (2) distance between Denny’s 1 and La Quinta (2).
+Step 3: Now let’s consider all Denny’s locations.
+
+3. How many pairings are there between all Denny’s and all La Quinta locations in Alaska, i.e. how many distances do we need to calculate between the locations of these establishments in Alaska?
+
+There are 6 distances to calculate, because of 3*2, and because the distance from A to B is the same as the distance from B to A.
+
+In order to calculate these distances we need to first restructure our data to pair the Denny’s and La Quinta locations. To do so, we will join the two data frames. We have six join options in R. Each of these join functions take at least three arguments: x, y, and by.
+
+* x and y are data frames to join
+* by is the variable(s) to join by
+* Four of these join functions combine variables from the two data frames:
+
+These are called **mutating joins**.
+* inner_join(): return all rows from x where there are matching values in y, and all columns from x and y.
+
+* left_join(): return all rows from x, and all columns from x and y. Rows in x with no match in y will have NA values in the new columns.
+
+* right_join(): return all rows from y, and all columns from x and y. Rows in y with no match in x will have NA values in the new columns.
+
+* full_join(): return all rows and all columns from both x and y. Where there are not matching values, returns NA for the one missing.
+
+And the other two join functions only keep cases from the left-hand data frame, and are called filtering joins. We’ll learn about these another time but you can find out more about the join functions in the help files for any one of them, e.g. ?full_join.
+
+In practice we mostly use mutating joins. In this case we want to keep all rows and columns from both dn_ak and lq_ak data frames. So we will use a full_join.
+
+Let’s join the data on Denny’s and La Quinta locations in Alaska, and take a look at what it looks like:
+4. How many observations are in the joined dn_lq_ak data frame? What are the names of the variables in this data frame.
+```{r}
+dn_lq_ak <- full_join(dn_ak, lq_ak, by = "state")
+nrow(dn_lq_ak)
+```
+
+There are 6 rows in this data frame. The variables are the same as the original except they have .x and .y appended to their names (with the exception of state, because that's what we joined by).
+
+.x in the variable names means the variable comes from the x data frame (the first argument in the full_join call, i.e. dn_ak), and .y means the variable comes from the y data frame. These varibles are renamed to include .x and .y because the two data frames have the same variables and it’s not possible to have two variables in a data frame with the exact same name.
+
+Now that we have the data in the format we wanted, all that is left is to calculate the distances between the pairs.
+
+5. What function from the tidyverse do we use the add a new variable to a data frame while keeping the existing variables?
+mutate
+
+One way of calculating the distance between any two points on the earth is to use the Haversine distance formula. This formula takes into account the fact that the earth is not flat, but instead spherical.
+
+```{r}
+# This function takes five arguments:
+# 
+# Longitude and latitude of the first location
+# Longitude and latitude of the second location
+# A parameter by which to round the responses
+
+haversine <- function(long1, lat1, long2, lat2, round = 3) {
+  # convert to radians
+  long1 = long1 * pi / 180
+  lat1  = lat1  * pi / 180
+  long2 = long2 * pi / 180
+  lat2  = lat2  * pi / 180
+  
+  R = 6371 # Earth mean radius in km
+  
+  a = sin((lat2 - lat1)/2)^2 + cos(lat1) * cos(lat2) * sin((long2 - long1)/2)^2
+  d = R * 2 * asin(sqrt(a))
+  
+  return( round(d,round) ) # distance in km
+}
+```
+
+6. Calculate the distances between all pairs of Denny’s and La Quinta locations and save this variable as distance. Make sure to save this variable in THE dn_lq_ak data frame so that you can use it later.
+```{r}
+dn_lq_ak = dn_lq_ak %>% mutate(distance = haversine(longitude.x, latitude.x, longitude.y, latitude.y))
+```
+
+7. Calculate the minimum distance between a Denny’s and La Quinta for each Denny’s location. To do so we group by Denny’s locations and calculate a new variable that stores the information for the minimum distance.
+
+```{r}
+dn_lq_ak_mindist = dn_lq_ak %>% group_by(address.x) %>%
+  summarise(closest = min(distance))
+```
+
+8. Describe the distribution of the distances Denny’s and the nearest La Quinta locations in Alaska. Also include an appropriate visualization and relevant summary statistics.
+```{r}
+mean(dn_lq_ak_mindist$closest)
+median(dn_lq_ak_mindist$closest)
+hist(dn_lq_ak_mindist$closest, main = "Distance to La Quintas", xlab = "Distance(km)", xlim = c(0,8))
+```
+
+9. Repeat the same analysis for North Carolina: 
+(i) filter Denny’s and La Quinta Data Frames for NC, 
+```{r}
+dn_nc = dennys %>% filter(state == "NC")
+nrow(dn_nc)
+
+lq_nc = laquinta %>% filter(state == "NC")
+nrow(lq_nc)
+```
+
+(ii) join these data frames to get a completelist of all possible pairings, 
+```{r}
+dn_lq_nc <- full_join(dn_nc, lq_nc, by = "state")
+nrow(dn_lq_nc)
+```
+
+(iii) calculate the distances between all possible pairings of Denny’s and La Quinta in NC, 
+```{r}
+dn_lq_nc = dn_lq_nc %>% mutate(distance = haversine(longitude.x, latitude.x, longitude.y, latitude.y))
+```
+
+(iv) find the minimum distance between each Denny’s and La Quinta location, 
+```{r}
+dn_lq_nc_mindist = dn_lq_nc %>% group_by(address.x) %>%
+  summarise(closest = min(distance))
+```
+
+(v) visualize and describe the distribution of these shortest distances using appropriate summary statistics.
+```{r}
+mean(dn_lq_nc_mindist$closest)
+median(dn_lq_nc_mindist$closest)
+hist(dn_lq_nc_mindist$closest, main = "Distance to La Quintas", xlab = "Distance(km)", breaks=10)
+```
+
+10. Repeat the same analysis for Texas.
+```{r}
+dn_tx = dennys %>% filter(state == "TX")
+nrow(dn_tx)
+
+lq_tx = laquinta %>% filter(state == "TX")
+nrow(lq_tx)
+
+dn_lq_tx <- full_join(dn_tx, lq_tx, by = "state")
+nrow(dn_lq_tx)
+
+dn_lq_tx = dn_lq_tx %>% mutate(distance = haversine(longitude.x, latitude.x, longitude.y, latitude.y))
+dn_lq_tx_mindist = dn_lq_tx %>% group_by(address.x) %>%
+  summarise(closest = min(distance))
+
+mean(dn_lq_tx_mindist$closest)
+median(dn_lq_tx_mindist$closest)
+hist(dn_lq_tx_mindist$closest, main = "Distance to La Quintas", xlab = "Distance(km)", breaks=10)
+```
+
+11. Repeat the same analysis for a state of your choosing, different than the ones we covered so far.
+Take California.
+```{r}
+dn_ca = dennys %>% filter(state == "CA")
+nrow(dn_ca)
+
+lq_ca = laquinta %>% filter(state == "CA")
+nrow(lq_ca)
+
+dn_lq_ca <- full_join(dn_ca, lq_ca, by = "state")
+nrow(dn_lq_ca)
+
+dn_lq_ca = dn_lq_ca %>% mutate(distance = haversine(longitude.x, latitude.x, longitude.y, latitude.y))
+dn_lq_ca_mindist = dn_lq_ca %>% group_by(address.x) %>%
+  summarise(closest = min(distance))
+
+mean(dn_lq_ca_mindist$closest)
+median(dn_lq_ca_mindist$closest)
+hist(dn_lq_ca_mindist$closest, main = "Distance to La Quintas", xlab = "Distance(km)", breaks=10)
+```
+
+12. Among the states you examined, where is Mitch Hedberg’s joke most likely to hold true? Explain your reasoning.
+Hedberg's joke holds especially well in Texas, where the mean distance from Denny's to the closest La Quinta's is only 5.7 km (and median 3.3). This is almost within walking distance.
+While the other data for North Carolina and California are still skewed right, the mean and median are not quite as low, so the joke doesn't hold quite as well.
+In Alaska, the joke technically holds given the closest distances, but since there are only 3 Denny's, it's not overly applicable.
+
+## Compare to other fast food restaurants
+Compare the distance from Denny's to La Quinta to other fast foods to La Quinta. Select a sample of locations of these fast food restaurants that is comparable in size to the number of Denny's, in order to make a fair comparison.
+
+```{r}
+fastfood = read_csv(here("data_raw", "FastFoodRestaurants.csv")) %>% clean_names %>%
+  mutate(state = province) %>% select(address, city, state, postal_code, country, latitude, longitude, name)
+mcd_tx = fastfood %>% filter(state == "TX", startsWith(name, "McDonald"))
+lq_tx_sample = lq_tx %>% slice_sample(n = nrow(mcd_tx))
+
+mcd_lq_tx = full_join(mcd_tx, lq_tx_sample, by = "state")
+nrow(mcd_lq_tx)
+
+mcd_lq_tx = mcd_lq_tx %>% mutate(distance = haversine(longitude.x, latitude.x, longitude.y, latitude.y))
+# the last filter step is because there is an extreme outlier
+mcd_lq_tx_mindist = mcd_lq_tx %>% group_by(address.x) %>%
+  summarise(closest = min(distance)) %>% filter(closest < 6000)
+
+mean(mcd_lq_tx_mindist$closest)
+median(mcd_lq_tx_mindist$closest)
+hist(mcd_lq_tx_mindist$closest, main = "Distance to La Quintas", xlab = "Distance(km)", breaks=10)
+```
+
+```{r}  
+dn_lq_tx_mindist_sample = sample_n(dn_lq_tx_mindist, 151)
+ggplot() +
+  geom_histogram(dn_lq_tx_mindist_sample, mapping = aes(closest), fill = "red", alpha = .2) +
+  geom_histogram(mcd_lq_tx_mindist, mapping = aes(closest), fill = "blue", alpha = .2) 
+### Red is Denny's and blue is McDonalds
+```
+
+

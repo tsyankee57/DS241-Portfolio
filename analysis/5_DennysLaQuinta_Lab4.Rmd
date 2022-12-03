@@ -1,0 +1,157 @@
+---
+title: "Denny's/La Quinta Lab 4 - General Analysis"
+output: html_notebook
+author: "Tyler Yankee"
+date: "2022-10-14"
+---
+
+## Load packages and data
+```{r}
+library(tidyverse)
+library(dsbox)
+library(here)
+
+states = read_csv(here("data_raw", "states.csv"))
+```
+
+1. What are the dimensions of the Denny’s dataset? (Hint: Use inline R code and functions like nrow and ncol to compose your answer.) What does each row in the dataset represent? What are the variables?
+
+```{r}
+nrow(dennys)
+ncol(dennys)
+
+#View(dennys)
+```
+
+Each row in the dataset represents one Denny's location, of which there are 1643. Each column represents a variable (of which there are 6): address, city, state, zip code, longitude, and latitude.
+
+2. What are the dimensions of the La Quinta’s dataset? What does each row in the dataset represent? What are the variables?
+```{r}
+nrow(laquinta)
+ncol(laquinta)
+
+#View(laquinta)
+```
+Each row in this dataset represents one La Quinta's location, of which there are 909. The colums are the same as the Denny's dataset.
+
+3. Take a look at the websites that the data come from. Are there any La Quinta’s locations outside of the US? If so, which countries? What about Denny’s?
+
+La Quinta's has various locations outside the US, including those in Canada, Mexico, China, New Zealand, Turkey, UAE, Chile, and Colombia. According to Denny's website it appears that they have no locations outside the US, however a Google search says otherwise, so I'm not sure.
+
+4. Now take a look at the data. What would be some ways of determining whether or not either establishment has any locations outside the US using just the data (and not the websites). Don’t worry about whether you know how to implement this, just brainstorm some ideas. Write down at least one as your answer, but you’re welcomed to write down a few options too.
+
+The data has state information, but that doesn't necessarily imply these are US states, so we could filter based on US states. Maybe we can look at latitude and longitude and filter for a range outside of the US as well?
+
+5. Find the Denny’s locations that are outside the US, if any. To do so, filter the Denny’s locations for observations where state is not in states.abbreviation. The code for this is given below. Note that the %in% operator matches the states listed in the state variable to those listed in states$abbreviation. The ! operator means not. Are there any Denny’s locations outside the US?
+```{r}
+dennys_nonus = dennys %>% filter(!(state %in% states$abbreviation))
+```
+
+6. Add a country variable to the Denny’s dataset and set all observations equal to "United States". Remember, you can use the mutate function for adding a variable. Make sure to save the result of this as dennys again so that the stored data frame contains the new variable going forward.
+```{r}
+dennys = dennys %>% mutate(country = "United States")
+```
+
+7. Find the La Quinta locations that are outside the US, and figure out which country they are in. This might require some googling. Take notes, you will need to use this information in the next exercise.
+```{r}
+laquinta_nonus = laquinta %>% filter(!(state %in% states$abbreviation))
+```
+
+8. Add a country variable to the La Quinta dataset. Use the case_when function to populate this variable. You’ll need to refer to your notes from Exercise 7 about which country the non-US locations are in. Here is some starter code to get you going:
+```{r}
+mexico_states = c("QR","CH","NL","VE","PU","SL")
+laquinta = laquinta %>% mutate(country = case_when(
+    state %in% states$abbreviation     ~ "United States",
+    state %in% c("ON","BC")  ~ "Canada",
+    state == "ANT"           ~ "Colombia",
+    state %in% mexico_states ~ "Mexico",
+    state == "FM"            ~ "Honduras"
+))
+```
+
+Going forward, work with US La Quinta Locations only.
+```{r}
+laquinta = laquinta %>% filter(country == "United States")
+```
+
+9. Which states have the most and fewest Denny’s locations? What about La Quinta? Is this surprising? Why or why not?
+Most Locations:
+```{r}
+dennys %>% group_by(state) %>% filter(n() >= 25) %>%
+  ggplot(aes(x = fct_infreq(state))) + geom_bar() +
+  ggtitle("States with Most Denny's Locations") + 
+  xlab("State") + ylab("Number of Denny's Locations")
+
+laquinta %>% group_by(state) %>% filter(n() >= 15) %>%
+  ggplot(aes(x = fct_infreq(state))) + geom_bar() +
+  ggtitle("States with Most La Quinta Locations") + 
+  xlab("State") + ylab("Number of La Quinta Locations")
+```
+
+Fewest Locations:
+```{r}
+dennys %>% group_by(state) %>% filter(n() <= 10) %>%
+  ggplot(aes(x = fct_rev(fct_infreq(state)))) + geom_bar() +
+  ggtitle("States with Fewest Denny's Locations") + 
+  xlab("State") + ylab("Number of Denny's Locations")
+
+laquinta %>% group_by(state) %>% filter(n() <= 10) %>%
+  ggplot(aes(x = fct_rev(fct_infreq(state)))) + geom_bar() +
+  ggtitle("States with Fewest LaQuinta Locations") + 
+  xlab("State") + ylab("Number of La Quinta Locations")
+```
+
+I decided to split up the visualizations for most and fewest locations because there was too much information/noise on one graph.
+These results are neither surprising nor unsurprising to me as I do not frequent either of these businesses so I have no perception of where they have more locations. What I would say is that there seems to be some correlation between where their greater number of locations are (California, Texas, etc.).
+
+10. Which states have the most Denny’s locations per thousand square miles? What about La Quinta?
+```{r}
+dennys_conc = dennys %>% count(state) %>% 
+  inner_join(states, by = c("state" = "abbreviation")) %>%
+  mutate(loc_1000sqmi = n / area * 1000)
+laquinta_conc = laquinta %>% count(state) %>% 
+  inner_join(states, by = c("state" = "abbreviation")) %>%
+  mutate(loc_1000sqmi = n / area * 1000)
+
+dennys_conc %>% filter(loc_1000sqmi > .5, state != "DC") %>%
+  ggplot(aes(x = reorder(state, loc_1000sqmi))) + 
+  geom_bar(aes(weight = loc_1000sqmi)) + 
+  ggtitle("States with the Most Denny's per 1000 sq mi") +
+  xlab("State") + ylab("Denny's Locations per 1000 sq mi")
+laquinta_conc %>% filter(loc_1000sqmi > .25) %>%
+  ggplot(aes(x = reorder(state, loc_1000sqmi))) + 
+  geom_bar(aes(weight = loc_1000sqmi)) + 
+  ggtitle("States with the Most La Quinta's per 1000 sq mi") +
+  xlab("State") + ylab("La Quinta Locations per 1000 sq mi")
+```
+PLEASE NOTE: Washington D.C. has been omitted from the Denny's graph because it has 29 Denny's per 1000 sq mi, which is a clear outlier (due to its limited size) and takes away from the rest of the states.
+Rhode Island, Connecticut, and Florida seem to have the highest amounts of Denny's and La Quinta per 1000 sq mi. California, New York, and Maryland are high as well.
+
+```{r}
+dennys <- dennys %>%
+  mutate(establishment = "Denny's")
+laquinta <- laquinta %>%
+  mutate(establishment = "La Quinta")
+
+dn_lq <- bind_rows(dennys, laquinta)
+dn_lq %>% ggplot(aes(x = longitude, y = latitude, color = establishment)) +
+  geom_point()
+```
+
+11. Filter the data for observations in North Carolina only, and recreate the plot. You should also adjust the transparency of the points, by setting the alpha level, so that it’s easier to see the overplotted ones. Visually, does Mitch Hedberg’s joke appear to hold here?
+```{r}
+dn_lq_nc = dn_lq %>% filter(state == "NC")
+dn_lq_nc %>% ggplot(aes(x = longitude, y = latitude, color = establishment)) +
+  geom_point(alpha = .5)
+```
+
+For the NC map, the joke appears to hold that if you see a La Quinta, it is reasonable to assume that there will be a Denny's nearby, but not the other way around.
+
+12. Now filter the data for observations in Texas only, and recreate the plot, with an appropriate alpha level. Visually, does Mitch Hedberg’s joke appear to hold here?
+```{r}
+dn_lq_tx = dn_lq %>% filter(state == "TX")
+dn_lq_tx %>% ggplot(aes(x = longitude, y = latitude, color = establishment)) +
+  geom_point(alpha = .5)
+```
+
+For the TX map, the joke doesn't hold quite as well because there are so many more La Quinta locations than Denny's locations (contrary to most of the rest of the country). However, there are still a good amount of points where the joke does hold.
