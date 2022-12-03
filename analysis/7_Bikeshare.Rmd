@@ -1,0 +1,340 @@
+---
+title: "Bikeshare Visualization"
+output: html_notebook
+author: "Tyler Yankee"
+date: "2022-10-26"
+---
+
+```{r}
+library(tidyverse)
+library(here)
+library(janitor)
+library(lubridate)
+library(data.table)
+
+bikeshare = read_csv(here("data_raw", "202209-capitalbikeshare-tripdata.zip")) %>%
+  clean_names()
+```
+
+Haversine distance function:
+```{r}
+# This function takes five arguments:
+# 
+# Longitude and latitude of the first location
+# Longitude and latitude of the second location
+# A parameter by which to round the responses
+haversine <- function(long1, lat1, long2, lat2, round = 3) {
+  # convert to radians
+  long1 = long1 * pi / 180
+  lat1  = lat1  * pi / 180
+  long2 = long2 * pi / 180
+  lat2  = lat2  * pi / 180
+  
+  R = 6371 # Earth mean radius in km
+  
+  a = sin((lat2 - lat1)/2)^2 + cos(lat1) * cos(lat2) * sin((long2 - long1)/2)^2
+  d = R * 2 * asin(sqrt(a))
+  
+  return( round(d,round) ) # distance in km
+}
+```
+
+## Do members typically ride longer/shorter/same amount than casual users?
+
+```{r}
+# last filter is to remove one *extreme* outlier
+bikeshare = bikeshare %>% mutate(dist_km = haversine(start_lng, start_lat, end_lng, end_lat)) %>% filter(dist_km < 7500)
+
+bikeshare %>% ggplot(aes(x = member_casual, y = dist_km, fill = member_casual)) +
+  geom_violin()
+
+bikeshare %>% ggplot(aes(x = dist_km, fill = member_casual)) +
+  geom_density(aes(y = ..density..), data = ~ subset(., member_casual == "member")) +
+  geom_density(aes(y = -..density..), data = ~ subset(., member_casual == "casual")) +
+  ggtitle("Distribution of Distance Ridden for Members versus Casual Users") +
+  xlab("Distance (km)") + ylab("Density")
+```
+The conclusion seems to be that there is no significant difference in ride distance between members and casual users.
+```{r}
+members = bikeshare %>% filter(member_casual == "member")
+casual = bikeshare %>% filter(member_casual == "casual")
+
+median(members$dist_km)
+median(casual$dist_km)
+```
+
+## Number of bikes out per hour on a given day
+Looking at individual rides is nice, but not quite as useful for predicting how many bikes the company needs and where they need to put them (because one bike can have multiple riders on a given day, that's kind of the whole point of the "share").
+
+For each minute of the day, count the number of rides that are happening at that minute (that is, that minute is between the start and end time for the ride).
+For now, just take September 1st. Later we can look at robustifying this to iterate over the days of the month.
+```{r}
+bikeshare_09_01 = bikeshare %>% filter(startsWith(as.character(started_at), "2022-09-01"))
+
+times = c(seq(as.POSIXct("2022-09-01 00:00:00"),
+              as.POSIXct("2022-09-01 23:59:00"), by=(60)))
+nbikes = lapply(times, function(x)
+  {
+    nrow(bikeshare_09_01 %>% filter(x %within% interval(started_at, ended_at)))
+  })
+nbikes_09_01 = data.frame(unlist(times), unlist(nbikes)) %>%
+  rename("time" = "unlist.times.", "nbikes" = "unlist.nbikes.")
+```
+
+Visualize this dataset
+```{r}
+nbikes_09_01 %>% ggplot(aes(x = time, y = nbikes)) + geom_line() +
+  ggtitle("Number of Bikes Out Over the Day, 09/01/22") + 
+  xlab("Time") + ylab("Number of Bikes Out") +
+  theme(axis.text.x=element_text(angle=90,hjust=1)) +
+  scale_x_datetime(breaks = c(seq(as.POSIXct("2022-09-01 00:00:00"),
+              as.POSIXct("2022-09-02 00:00:00"), by=(2*60*60))))
+```
+
+<!-- Now the question is, how do we iterate this over the course of the month? -->
+<!-- ```{r} -->
+<!-- # Takes the date as a Date object -->
+<!-- analyze_nbikes = function(date) -->
+<!-- { -->
+<!--   date = as.character(date) -->
+<!--   print(paste("Starting analysis for ", date)) -->
+
+<!--   bikeshare_date = bikeshare %>% filter(startsWith(as.character(started_at), date)) -->
+<!--   times = c(seq(as.POSIXct(paste(date, " 00:00:00")), -->
+<!--                 as.POSIXct(paste(date, " 23:59:00")), by=(60))) -->
+<!--   nbikes = lapply(times, function(x) -->
+<!--     { -->
+<!--       nrow(bikeshare_date %>% filter(x %within% interval(started_at, ended_at))) -->
+<!--     }) -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- times = c(seq(as.ITime("00:00:00"), -->
+<!--               as.ITime("23:59:00"), by=60)) -->
+<!-- head(times) -->
+<!-- dates = c(seq(as.POSIXct("2022-09-01"), -->
+<!--               as.POSIXct("2022-09-30"), by="day")) -->
+<!-- head(dates) -->
+
+<!-- nbikes_list = lapply(dates, analyze_nbikes) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- nbikes_sep = as.data.frame(do.call(cbind, nbikes_list)) -->
+<!-- nbikes_sep = nbikes_sep %>% mutate_all(as.numeric) -->
+
+<!-- colnames(nbikes_sep) = dates -->
+
+<!-- nbikes_sep = cbind(unlist(times), nbikes_sep) -->
+<!-- nbikes_sep = nbikes_sep %>% rename("time" = "V1") -->
+<!-- nbikes_sep$time = as.POSIXct(nbikes_sep$time, format="%H:%M:%S") -->
+<!-- nbikes_sep = as.data.frame(melt(as.data.table(nbikes_sep),"time")) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- nbikes_sep %>% ggplot(aes(x = time, y = value, color = variable)) +  -->
+<!--   geom_line() + -->
+<!--   ggtitle("Number of Bikes Out Over Each Day for September 2022") +  -->
+<!--   xlab("Time of Day") + ylab("Number of Bikes Out") + -->
+<!--   theme(axis.text.x=element_text(angle=90,hjust=1)) + -->
+<!--   labs(color = "Date") -->
+<!-- ``` -->
+
+All of the above is commented out because it was my initial attempt at doing the riders vs. time analysis below, and it's a rather inefficient way of doing things.
+
+With the way the analyze_nbikes function is written, we could do a better job of segmenting this analysis...
+-Days of the month
+-Weekends vs. weekdays
+
+
+## New analysis (10/31) - duration
+Visualization to determine if the duration of rides is different on different days of the week.
+```{r}
+bikeshare_dur = bikeshare %>% mutate(duration = as.numeric((ended_at - started_at) / 60),
+                                     hour_of_day = hour(started_at),
+                                     day_of_week = lubridate::wday(started_at, label = TRUE))
+# There is data beyond 100 minutes, but it's so thin that it's not worth visualizing
+bikeshare_dur %>% filter(duration < 100, duration >= 0) %>% 
+  ggplot(aes(x = duration)) + geom_histogram(bins = 300) + facet_wrap(~day_of_week)
+```
+
+## Cleaning
+```{r}
+bikeshare_dur = bikeshare_dur %>% filter(duration > 0)
+```
+
+## Riders vs time
+Take a small sample from one day, just to develop the algorithm. Then it's easier to generalize to larger dataset once developed.
+
+pivot_longer makes the dataset "longer" on start and end time, then sort this result based on time
+
+create increment variable, call start 1 and end -1, then cumsum(increment) = riders
+
+uses a step plot to visualize the result
+
+this is easy to generalize across the entire dataset, not just for one day
+```{r}
+bikeshare_09_02_s = bikeshare_dur %>% filter(mday(started_at) == 2) %>%
+  slice_sample(n = 100) %>% 
+  select(started_at, ended_at) %>% rename("start" = "started_at", "end" = "ended_at")
+
+bikeshare_09_02_s = bikeshare_09_02_s %>% 
+  pivot_longer(everything(), names_to = "type", values_to = "time") %>%
+  arrange(time)
+
+bikeshare_09_02_s = bikeshare_09_02_s %>% mutate(increment = case_when(
+  type == "start" ~ 1,
+  type == "end" ~ -1
+), riders = cumsum(increment))
+
+bikeshare_09_02_s %>% ggplot(aes(x = time, y = riders)) + geom_step()
+```
+
+## Formalize this approach
+```{r}
+riders = bikeshare_dur %>% select(started_at, ended_at) %>%
+  filter(month(started_at) == 9, month(ended_at) == 9) %>%
+  rename("start" = "started_at", "end" = "ended_at") %>%
+  pivot_longer(everything(), names_to = "type", values_to = "time") %>%
+  arrange(time) %>%
+  mutate(increment = case_when(type == "start" ~ 1, type == "end" ~ -1),
+         numriders = cumsum(increment))
+riders %>% ggplot(aes(x = time, y = numriders)) + geom_line() +
+  ggtitle("Number of Riders During September") + 
+  xlab("Date and Time") + ylab("Number of Riders")
+```
+
+We can apply some of the same manipulation and visualization techniques as we did above w/ duration.
+```{r}
+riders = riders %>% mutate(week = case_when(
+  time %within% interval(as.POSIXct("2022-09-04"), as.POSIXct("2022-09-10")) ~ 2,
+  time %within% interval(as.POSIXct("2022-09-11"), as.POSIXct("2022-09-17")) ~ 3,
+  time %within% interval(as.POSIXct("2022-09-18"), as.POSIXct("2022-09-24")) ~ 4,
+  time %within% interval(as.POSIXct("2022-09-25"), as.POSIXct("2022-10-01")) ~ 5,
+))
+riders %>% filter(!is.na(week)) %>% ggplot(aes(x = time, y = numriders)) + geom_line() +
+  facet_wrap(~week, scales = "free_x") +
+  labs(title = "Number of Riders During September, By Week", 
+          subtitle = "Only full weeks included") + 
+  xlab("Date and Time") + ylab("Number of Riders")
+```
+
+Plot faceted by day
+```{r}
+riders %>% ggplot(aes(x = time, y = numriders)) + geom_step() +
+  facet_wrap(~mday(time), scales = "free_x", ncol = 7)
+```
+
+For some reason my graph is messed up for a few of the days, I'll have to figure that out later.
+Observations:
+- the days where there's a dip in the morning and a peak in the afternoon are mostly weekends - exception to this is 9/5 which is a Monday, but also a holiday so that makes sense
+- pattern on Fridays is less bimodal (like the other weekdays) and more just a gradual increase
+- weather is a factor - ridership generally decreases - there was a storm in DC on 9/11 and 9/12, and rain in the evening on 9/30
+
+## Separating by bike type
+cumsum on bike type
+-include that variable in the dataset
+-group on that variable
+```{r}
+bike_type = bikeshare %>% filter(month(started_at) == 9, month(ended_at) == 9) %>%
+  select(rideable_type, started_at, ended_at) %>%
+  rename("start" = "started_at", "end" = "ended_at") %>%
+  pivot_longer(start:end, names_to = "type", values_to = "time") %>%
+  arrange(time) %>%
+  mutate(increment = case_when(
+    type == "start" ~ 1,
+    type == "end" ~ -1
+  )) %>%
+  group_by(rideable_type) %>%
+  mutate(numriders = cumsum(increment)) %>%
+  filter(mday(time) <= 7)
+bike_type %>% ggplot(aes(x = time, y = numriders, color = rideable_type)) + geom_step() +
+  facet_wrap(~mday(time), scales = "free_x", ncol = 7)
+```
+
+## Members vs. casual users
+Now analyze members vs casual users in a similar way
+```{r}
+members_casual = bikeshare %>% filter(month(started_at) == 9, month(ended_at) == 9) %>%
+  select(member_casual, started_at, ended_at) %>%
+  rename("start" = "started_at", "end" = "ended_at") %>%
+  pivot_longer(start:end, names_to = "type", values_to = "time") %>%
+  arrange(time) %>%
+  mutate(increment = case_when(
+    type == "start" ~ 1,
+    type == "end" ~ -1
+  )) %>%
+  group_by(member_casual) %>%
+  mutate(numriders = cumsum(increment))
+members_casual %>% ggplot(aes(x = time, y = numriders, color = member_casual)) + geom_step() +
+  facet_wrap(~mday(time), scales = "free_x", ncol = 7)
+```
+
+Observations:
+- on the weekdays, the morning commute time has more members than casual riders
+- on the weekends, the casual riders dominate (tourists, random people wanting to go for a bike ride?)
+
+## Duration of bike rides over time
+```{r}
+# This filtering is done not only to remove the bad data (e.g. rides over 24 hours)
+# but also because the distribution has such a strong right skew, narrowing down to this
+# makes the patterns more visible
+bikeshare_dur = bikeshare_dur %>% filter(duration < 120)
+
+# day of the month
+bikeshare_dur %>% ggplot(aes(x = duration)) + geom_histogram(bins = 75) +
+  facet_wrap(~mday(started_at), ncol = 7) +
+  labs(title = "Duration of Rides for Each Day of September 2022",
+       subtitle = "Excludes rides longer than 2 hours") +
+  xlab("Duration (min)") + ylab("Number of Rides")
+
+# day of the week
+bikeshare_dur %>% ggplot(aes(x = duration)) + geom_histogram(bins = 75) +
+  facet_wrap(~day_of_week) +
+  labs(title = "Duration of Rides for Days of the Week During September 2022",
+       subtitle = "Excludes rides longer than 2 hours") +
+  xlab("Duration (min)") + ylab("Number of Rides")
+
+# hour of the day
+# technically, we need different viz to keep track of start and end times
+# in practice these produce such similiar graphs that it's not very useful,
+# so just take start time
+bikeshare_dur %>% ggplot(aes(x = duration)) + geom_histogram(bins = 75) +
+  facet_wrap(~hour_of_day, ncol=6) +
+  labs(title = "Duration of Rides for Hours of the Day During September 2022",
+       subtitle = "Excludes rides longer than 2 hours") +
+  xlab("Duration (min)") + ylab("Number of Rides")
+
+# morning or afternoon?
+bikeshare_dur = bikeshare_dur %>% mutate(period_of_day = case_when(
+  am(started_at) ~ "morning",
+  pm(started_at) ~ "afternoon"
+))
+bikeshare_dur %>% ggplot(aes(x = duration)) + geom_histogram(bins = 75) +
+  facet_wrap(~period_of_day) +
+  labs(title = "Duration of Rides for Periods of the Day During September 2022",
+       subtitle = "Excludes rides longer than 2 hours") +
+  xlab("Duration (min)") + ylab("Number of Rides")
+
+# weekday or weekend?
+bikeshare_dur = bikeshare_dur %>% mutate(day_type = case_when(
+  day_of_week %in% c("Mon","Tue","Wed","Thu","Fri") ~ "weekday",
+  day_of_week %in% c("Sat","Sun") ~ "weekend"
+))
+bikeshare_dur %>% ggplot(aes(x = duration)) + geom_histogram(bins = 75) +
+  facet_wrap(~day_type) +
+  labs(title = "Duration of Rides for Weekends vs. Weekdays During September 2022",
+       subtitle = "Excludes rides longer than 2 hours") +
+  xlab("Duration (min)") + ylab("Number of Rides")
+```
+
+## New direction
+```{r}
+library(gbfs)
+dc_stations = get_station_information("https://gbfs.capitalbikeshare.com/gbfs/gbfs.json", 
+                                      output = "return") %>% clean_names()
+dc_stations %>% ggplot(aes(x = lon, y = lat)) + geom_point()
+```
+
+Consider pursuing this direction further.
