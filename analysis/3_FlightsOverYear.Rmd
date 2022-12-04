@@ -24,20 +24,18 @@ years_list = list(df2017, df2018, df2019, df2020, df2021, df2022)
 ```
 
 ## Break down each year by month and look at flights for Southwest Airlines.
-This could definitely be done better - I just don't have the most time right now.
-Some ideas...
 
-* Use select and join to get one data frame with all the years together (year is already a column) and only relevant info for each year (so departures_performed, month, maybe others?)
-* Graph this dataframe, facet_wrap on year, and potentially color if that's not a clear enough split, so that it's all on one visualization and labeled rather than what is below.
 ```{r}
-years_list = lapply(years_list, filter, carrier_name == "Southwest Airlines Co.", passengers > 0)
-
-for(df in years_list)
-{
-  print(ggplot(df, aes(x = month)) + geom_bar(aes(weight = departures_performed)))
-}
-
+df_complete = rbind(df2017,df2018,df2019,df2020,df2021,df2022) %>%
+  filter(origin == "LGA" | dest == "LGA", carrier_name == "Southwest Airlines Co.", 
+         passengers > 0) %>%
+  select(departures_performed, passengers, carrier_name, origin, dest, year, month) %>%
+  mutate(total_month = month + 12*(year - 2017))
+df_complete %>% ggplot(aes(x = month)) + geom_bar(aes(weight = departures_performed)) +
+  facet_wrap(~year) + labs(title = "Southwest Airlines Flights to/From La Guardia by Year",
+                           x = "Month", y = "Departures Performed")
 ```
+
 
 
 ## Discussion of possibilities for visualizations
@@ -52,10 +50,6 @@ Assume to and from LGA.
 ## New visualization
 The new complete dataframe combines each year of data; filters to LaGuardia, Southwest Airlines, and flights with passengers; and adds a new column representing the total month since 2017.
 ```{r}
-df_complete = rbind(df2017,df2018,df2019,df2020,df2021,df2022) %>%
-  filter(origin == "LGA" | dest == "LGA", carrier_name == "Southwest Airlines Co.", passengers > 0) %>%
-  select(departures_performed, passengers, carrier_name, origin, dest, year, month) %>%
-  mutate(total_month = month + 12*(year - 2017))
 df_complete %>% ggplot(aes(x = total_month)) + 
   geom_bar(aes(weight = passengers)) + 
   ggtitle("Passengers on Southwest Airline Flights to/from LaGuardia, 2017-2022") +
