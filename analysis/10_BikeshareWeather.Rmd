@@ -227,4 +227,4 @@ glance(rm_interaction)$adj.r.squared
 
 Observations:
 
-* When observing the adjusted $R^2$ of all of the above, we can conclude that none of these models provide a significant improvement over the full model.
+* When observing the adjusted $R^2$ of all of the above and comparing that to the $R^2$ of the full model, we can conclude that none of these models provide a significant improvement over the full model.
