@@ -88,3 +88,15 @@ This file builds on the general bikeshare analysis by loading geographic data on
 This file builds on the census tract-level bikeshare spatial analysis by incorporating data from the Longitudinal Employer-Household Dynamics (LODES) segment of the U.S. census data.
     * use of `lehdr::grab_lodes` function to get LODES data
     * use of `ggplot2::pivot_wider` and `left_join` to restructure data frames
+10. __Bikeshare w/ Weather Data:__
+This file uses a slightly different bikeshare dataset - one from 2011/2012 that is baked into the `dsbox` (Data Science in a Box) package - to model the effect of weather patterns on bikeshare usage.
+    * Basic R Skills
+        * use of `fct_relevel` function to manually reorder factor levels
+        * use of `ifelse` function to evaluate conditions when cleaning data
+        * use of regression functions: `linear_reg`, `set_engine("lm")`, `fit` (different from the functions used in the MA 132 Enrollment Analysis, but produce the same results)
+    * Data Science Process
+        * Clean data to get desired variables before modeling.
+        * Visualize data before modeling to get a general sense of the situation.
+        * Develop a series of models by adding and removing certain variables.
+        * Interpret the meaning of the slope/intercept parameters and the `R^2` values of a model, and make observations about the data based on these interpretations.
+        * Examine `R^2` values to compare the effectiveness of different models.
